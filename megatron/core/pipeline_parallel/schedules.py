@@ -2123,18 +2123,19 @@ def early_exit_backward_step(input_tensor, output_tensor, output_tensor_grad, co
     # Backward pass.
     if output_tensor_grad[0] is None and config.grad_scale_func is not None:
         output_tensor[0] = config.grad_scale_func(output_tensor[0])
-    if early_exit_loss is not None:
-        if output_tensor_grad[0] is not None:
-            fake_loss = early_exit_loss + torch.sum(output_tensor[0] * output_tensor_grad[0])
-        elif output_tensor[0].numel() == 1:
-            fake_loss = early_exit_loss + output_tensor[0]
+    with torch.enable_grad():
+        if early_exit_loss is not None:
+            if output_tensor_grad[0] is not None:
+                fake_loss = early_exit_loss + torch.sum(output_tensor[0] * output_tensor_grad[0])
+            elif output_tensor[0].numel() == 1:
+                fake_loss = early_exit_loss + output_tensor[0]
+            else:
+                fake_loss = early_exit_loss
+            custom_backward(fake_loss, None)
+        elif config.deallocate_pipeline_outputs:
+            custom_backward(output_tensor[0], output_tensor_grad[0])
         else:
-            fake_loss = early_exit_loss
-        custom_backward(fake_loss, None)
-    elif config.deallocate_pipeline_outputs:
-        custom_backward(output_tensor[0], output_tensor_grad[0])
-    else:
-        torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
+            torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
 
     # Collect the grad of the input_tensor.
     input_tensor_grad = [None]

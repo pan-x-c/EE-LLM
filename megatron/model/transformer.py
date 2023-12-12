@@ -1283,6 +1283,7 @@ class EarlyExitTransformerLayer(MegatronModule):
         self.use_exit_mlp = args.use_exit_mlp
         self.use_exit_norm = args.use_exit_norm
         self.use_exit_block = args.use_exit_block
+        self.tune_exit = args.tune_exit
         self.exit_layer_temperature = args.exit_layer_temperature[args.exit_layer_nums.index(self.layer_number)]
         self.exit_output_weight = None
 
@@ -1426,10 +1427,17 @@ class EarlyExitTransformerLayer(MegatronModule):
             return output
 
         # exit MLP.
-        exit_output = self._forward_mlp(mlp=self.mlp.branch,
-                                        norm_output=norm_output,
-                                        residual=residual,
-                                        bias_dropout_add_func=bias_dropout_add_func)
+        if self.tune_exit:
+            exit_output = partial(self._forward_mlp,
+                                  mlp=self.mlp.branch,
+                                  norm_output=norm_output,
+                                  residual=residual,
+                                  bias_dropout_add_func=bias_dropout_add_func)
+        else:
+            exit_output = self._forward_mlp(mlp=self.mlp.branch,
+                                            norm_output=norm_output,
+                                            residual=residual,
+                                            bias_dropout_add_func=bias_dropout_add_func)
         return output, exit_output
 
     def _cal_exit_loss(self, hidden_states, exit_process_func, exit_loss_func, 
@@ -1470,8 +1478,9 @@ class EarlyExitTransformerLayer(MegatronModule):
                                              hidden_states=hidden_states,
                                              exit_process_func=exit_process_func,
                                              exit_loss_func=exit_loss_func,
-                                             lazy_hidden_states=False)
-            return lazy_exit_forward_func, False
+                                             lazy_hidden_states=self.tune_exit and self.use_exit_mlp)
+            exit = self.tune_exit and (self.layer_number == mpu.get_early_exit_layer_nums()[-1]) and not mpu.post_stage_has_early_exit()
+            return lazy_exit_forward_func, exit
 
     def forward(self, hidden_states, attention_mask,
                 encoder_output=None, enc_dec_attn_mask=None,
@@ -2057,6 +2066,7 @@ class EarlyExitParallelTransformer(ParallelTransformer):
             drop_path_rate
         )
         self.exit_states = list(map(lambda x: x in mpu.get_early_exit_layer_nums(), self.layer_nums))
+        self.tune_exit = get_args().tune_exit
 
 
     def _build_layer(self, layer_number, args, config, model_type, layer_type, self_attn_mask_type):
@@ -2141,7 +2151,7 @@ class EarlyExitParallelTransformer(ParallelTransformer):
                                             inference_params=inference_params,
                                             rotary_pos_emb=rotary_pos_emb)
 
-                if torch.is_grad_enabled() and self.training:
+                if (torch.is_grad_enabled() or self.tune_exit) and self.training:
                     self.microbatch_count += 1
 
         if self.post_process and self.post_norm:

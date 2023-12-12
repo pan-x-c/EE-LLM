@@ -1257,6 +1257,8 @@ def _add_multi_exit_args(parser):
     group.add_argument('--num-fill-warmup-microbatches', type=int, default=None)
     group.add_argument('--num-fill-cooldown-microbatches', type=int, default=None)
     group.add_argument('--backward-forward-ratio', type=float, default=2.0)
+    group.add_argument('--tune-exit', action='store_true',
+                       help='Only finetune early exit parameters.')
     group.add_argument('--use-dynamic-exit-layer-weight', action='store_true')
     return parser
 
