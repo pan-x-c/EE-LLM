@@ -1594,6 +1594,8 @@ def _get_num_layers(args, model_type, is_decoder=False):
     else:
         if not is_decoder:
             num_layers = args.encoder_num_layers
+            if args.tune_exit:
+                num_layers = num_layers // args.pipeline_model_parallel_size
         else:
             num_layers = args.decoder_num_layers
     return num_layers

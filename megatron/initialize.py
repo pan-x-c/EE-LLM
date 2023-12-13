@@ -207,16 +207,17 @@ def _initialize_distributed():
         if mpu.model_parallel_is_initialized():
             print("model parallel is already initialized")
         else:
-            if args.tune_exit and args.tune_exit_tensor_parallel_size is not None \
-                    and args.tune_exit_pipeline_parallel_size is not None:
+            if args.tune_exit:
                 mpu.initialize_model_parallel(
-                    args.tune_exit_tensor_parallel_size,
+                    args.tensor_model_parallel_size,
                     args.tune_exit_pipeline_parallel_size,
                     args.virtual_pipeline_model_parallel_size,
                     args.pipeline_model_parallel_split_rank,
                     expert_model_parallel_size=args.expert_model_parallel_size,
-                    num_layers=args.num_layers / (args.pipeline_model_parallel_size / args.tune_exit_pipeline_parallel_size),
-                    early_exit_layer_nums=args.exit_layer_nums
+                    num_layers=args.num_layers,
+                    early_exit_layer_nums=args.exit_layer_nums,
+                    tune_exit=True,
+                    full_exit_pipeline_parallel_size=args.pipeline_model_parallel_size
                 )
             else:
                 mpu.initialize_model_parallel(

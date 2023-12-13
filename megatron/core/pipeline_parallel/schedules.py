@@ -113,6 +113,8 @@ def get_forward_backward_func():
                                             num_fill_warmup_microbatches=args.num_fill_warmup_microbatches, 
                                             num_fill_cooldown_microbatches=args.num_fill_cooldown_microbatches,
                                             early_exit_loss_weight=early_exit_loss_weight)
+            elif args.tune_exit:
+                forward_backward_func = partial(forward_backward_pipelining_for_early_exit_tuning, early_exit_loss_weight=early_exit_loss_weight)
             else:
                 forward_backward_func = partial(early_exit_forward_backward_pipelining, early_exit_loss_weight=early_exit_loss_weight)
         elif parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None:
@@ -1442,8 +1444,125 @@ def early_exit_forward_backward_no_pipelining(
         # Finalize model grads (perform full grad all-reduce / reduce-scatter for
         # data parallelism and layernorm all-reduce for sequence parallelism).
         config.finalize_model_grads_func([model])
+    if len(backward_data_store) == len(forward_data_store):
+        backward_data_store = [{**f, **b} for (f, b) in zip(forward_data_store, backward_data_store)]
+    return backward_data_store
 
-    forward_data_store = [{**f, **b} for (f, b) in zip(forward_data_store, backward_data_store)]
+
+def forward_backward_pipelining_for_early_exit_tuning(
+    *,
+    forward_step_func,
+    data_iterator: Union[Iterator, List[Iterator]],
+    model: Union[torch.nn.Module, List[torch.nn.Module]],
+    num_microbatches: int,
+    seq_length: int,
+    micro_batch_size: int,
+    decoder_seq_length: int = None,
+    forward_only: bool = False,
+    collect_non_loss_data: bool = False,
+    early_exit_loss_weight: EarlyExitLossWeight = None,
+):
+    if isinstance(model, list):
+        assert (
+            len(model) == 1
+        ), "non-interleaved pipeline parallelism does not support model chunking"
+        model = model[0]
+    if isinstance(data_iterator, list):
+        assert (
+            len(data_iterator) == 1
+        ), "non-pipeline-parallel schedule does not support model chunking"
+        data_iterator = data_iterator[0]
+
+    config = get_model_config(model)
+    if config.overlap_p2p_comm:
+        raise ValueError(
+            "Non-interleaved pipeline parallelism does not support overlapping p2p communication"
+        )
+
+    if config.timers is not None:
+        config.timers('forward-backward', log_level=1).start(barrier=config.barrier_with_L1_time)
+
+    # Disable async grad reductions
+    no_sync_func = config.no_sync_func
+    if no_sync_func is None:
+        no_sync_func = contextlib.nullcontext
+    no_sync_context = None
+    has_early_exit = parallel_state.has_early_exit()
+
+    def disable_grad_sync():
+        """Disable asynchronous grad reductions"""
+        nonlocal no_sync_context
+        if no_sync_context is None:
+            no_sync_context = no_sync_func()
+            no_sync_context.__enter__()
+
+    def enable_grad_sync():
+        """Enable asynchronous grad reductions"""
+        nonlocal no_sync_context
+        if no_sync_context is not None:
+            no_sync_context.__exit__(None, None, None)
+            no_sync_context = None
+
+    disable_grad_sync()
+
+    if early_exit_loss_weight:
+        early_exit_loss_weight.update()
+
+
+    model_type = get_model_type(model)
+
+    rank = parallel_state.get_pipeline_model_parallel_rank()
+    recv_tensor_shapes = get_tensor_shapes(
+        rank=rank - 1,
+        model_type=model_type,
+        seq_length=seq_length,
+        micro_batch_size=micro_batch_size,
+        decoder_seq_length=decoder_seq_length,
+        config=config,
+    )
+    send_tensor_shapes = get_tensor_shapes(
+        rank=rank,
+        model_type=model_type,
+        seq_length=seq_length,
+        micro_batch_size=micro_batch_size,
+        decoder_seq_length=decoder_seq_length,
+        config=config,
+    )
+
+    forward_data_store = []
+
+    # Run warmup forward passes.
+    for i in range(num_microbatches):
+        input_tensor = recv_forward(recv_tensor_shapes, config)
+        output_tensor, early_exit_loss_func = early_exit_forward_step(
+            forward_step_func,
+            data_iterator,
+            model,
+            num_microbatches,
+            input_tensor,
+            forward_data_store,
+            config,
+            collect_non_loss_data,
+        )
+        send_forward(output_tensor, send_tensor_shapes, config)
+
+        if has_early_exit and not forward_only:
+            if i == num_microbatches - 1:
+                if config.grad_sync_func is None or rank == 0:
+                    enable_grad_sync()
+            exit_loss = cal_early_exit_loss(early_exit_loss_func, forward_data_store, num_microbatches, early_exit_loss_weight)
+            early_exit_backward_step(input_tensor, output_tensor, [None], config,
+                early_exit_loss=exit_loss
+            )
+
+    if config.timers is not None:
+        config.timers('forward-backward').stop()
+
+    if config.finalize_model_grads_func is not None and not forward_only:
+        # Finalize model grads (perform full grad all-reduce / reduce-scatter for
+        # data parallelism, layernorm all-reduce for sequence parallelism, and
+        # embedding all-reduce for pipeline parallelism).
+        config.finalize_model_grads_func([model])
 
     return forward_data_store
 
@@ -2076,7 +2195,7 @@ def early_exit_forward_step(
         output_tensor = lm_output
     loss_dict = {}
 
-    if parallel_state.is_pipeline_last_stage():
+    if parallel_state.is_pipeline_last_stage() and not parallel_state.is_tune_exit():
         output_tensor = loss_func(output_tensor=output_tensor,
                                   log_dict=loss_dict,
                                   log_key='lm loss')

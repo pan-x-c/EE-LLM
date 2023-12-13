@@ -67,9 +67,10 @@ def validate_args(args, defaults={}):
         ' ({}) is not divisible by tensor model parallel size ({})'.format(
             args.world_size, args.tensor_model_parallel_size)
     # Pipeline model parallel size.
-    args.pipeline_model_parallel_size = min(
-        args.pipeline_model_parallel_size,
-        (args.world_size // args.tensor_model_parallel_size))
+    if not args.tune_exit:
+        args.pipeline_model_parallel_size = min(
+            args.pipeline_model_parallel_size,
+            (args.world_size // args.tensor_model_parallel_size))
     args.transformer_pipeline_model_parallel_size = (
         args.pipeline_model_parallel_size - 1
         if args.standalone_embedding_stage else
@@ -78,11 +79,14 @@ def validate_args(args, defaults={}):
     # Checks.
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size
-    assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
-        ' divisible by tensor parallel size ({}) times pipeline parallel ' \
-        'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
-                           args.pipeline_model_parallel_size)
-    args.data_parallel_size = args.world_size // model_parallel_size
+    if not args.tune_exit:
+        assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
+            ' divisible by tensor parallel size ({}) times pipeline parallel ' \
+            'size ({})'.format(args.world_size, args.tensor_model_parallel_size,
+                            args.pipeline_model_parallel_size)
+        args.data_parallel_size = args.world_size // model_parallel_size
+    else:
+        args.data_parallel_size = args.world_size // (args.tensor_model_parallel_size * args.tune_exit_pipeline_parallel_size)
     if args.rank == 0:
         print('using world size: {}, data-parallel-size: {}, '
               'tensor-model-parallel size: {}, '
@@ -399,6 +403,9 @@ def validate_args(args, defaults={}):
     # don't allow it to keep things simple
     if not args.add_position_embedding and args.position_embedding_type != 'rope':
         raise RuntimeError('--no-position-embedding is deprecated, use --position-embedding-type')
+
+    if args.position_embedding_type == 'rope':
+        args.add_position_embedding = False
 
     # MoE Spec check
     if args.num_experts is not None:
@@ -1260,7 +1267,6 @@ def _add_early_exit_args(parser):
     group.add_argument('--use-dynamic-exit-layer-weight', action='store_true')
     group.add_argument('--tune-exit', action='store_true',
                        help='Only finetune early exit parameters.')
-    group.add_argument('--tune-exit-tensor-parallel-size', type=int, default=None)
     group.add_argument('--tune-exit-pipeline-parallel-size', type=int, default=None)
     return parser
 

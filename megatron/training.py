@@ -241,7 +241,10 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             model.append(this_model)
     else:
         pre_process = mpu.is_pipeline_first_stage()
-        post_process = mpu.is_pipeline_last_stage()
+        if args.tune_exit:
+            post_process = mpu.is_real_pipeline_last_stage_in_tune_exit()
+        else:
+            post_process = mpu.is_pipeline_last_stage()
         add_encoder = True
         add_decoder = True
         if model_type == ModelType.encoder_and_decoder:
