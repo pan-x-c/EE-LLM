@@ -41,7 +41,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
     parser = _add_experimental_args(parser)
-    parser = _add_multi_exit_args(parser)
+    parser = _add_early_exit_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -1229,7 +1229,7 @@ def _add_data_args(parser):
     return parser
 
 
-def _add_multi_exit_args(parser):
+def _add_early_exit_args(parser):
     group = parser.add_argument_group(title='multexit')
 
     group.add_argument('--exit-layer-nums', type=int, nargs='+', default=[],
@@ -1257,9 +1257,11 @@ def _add_multi_exit_args(parser):
     group.add_argument('--num-fill-warmup-microbatches', type=int, default=None)
     group.add_argument('--num-fill-cooldown-microbatches', type=int, default=None)
     group.add_argument('--backward-forward-ratio', type=float, default=2.0)
+    group.add_argument('--use-dynamic-exit-layer-weight', action='store_true')
     group.add_argument('--tune-exit', action='store_true',
                        help='Only finetune early exit parameters.')
-    group.add_argument('--use-dynamic-exit-layer-weight', action='store_true')
+    group.add_argument('--tune-exit-tensor-parallel-size', type=int, default=None)
+    group.add_argument('--tune-exit-pipeline-parallel-size', type=int, default=None)
     return parser
 
 
