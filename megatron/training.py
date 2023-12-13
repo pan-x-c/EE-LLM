@@ -217,6 +217,15 @@ def update_train_iters(args):
     print_rank_0('setting training iterations to {}'.format(args.train_iters))
 
 
+def is_early_exit_param(param_name):
+    # for exit_output_layer / exit_norm / exit_block
+    if 'exit' in param_name:
+        return True
+    # for branch mlp
+    if '.branch.' in param_name:
+        return True
+    return False
+
 def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap_with_ddp=True):
     """Build the model."""
     args = get_args()
@@ -273,6 +282,13 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     if not isinstance(model, list):
         model = [model]
+
+    # tune early exit only
+    if args.tune_exit:
+        for model_module in model:
+            for name, param in model_module.named_parameters():
+                if not is_early_exit_param(name):
+                    param.requires_grad = False
 
     # Disallow training and inference with Transformer Engine
     # for non-GPT models
