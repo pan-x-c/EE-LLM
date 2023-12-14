@@ -786,17 +786,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
-        context = nullcontext
-        if args.tune_exit:
-            context = torch.no_grad
-        with context():
-            loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
-                train_step(forward_backward_func,
-                        train_data_iterator,
-                        model,
-                        optimizer,
-                        opt_param_scheduler,
-                        config)
+        loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+            train_step(forward_backward_func,
+                    train_data_iterator,
+                    model,
+                    optimizer,
+                    opt_param_scheduler,
+                    config)
         iteration += 1
         args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
                                        args.micro_batch_size * \

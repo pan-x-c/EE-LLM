@@ -52,7 +52,7 @@ def get_batch(data_iterator):
     labels = tokens_[:, 1:].contiguous()
     tokens = tokens_[:, :-1].contiguous()
     # for Llama2Tokenizer
-    tokens.masked_fill_(tokens == 32002, 2)
+    tokens.masked_fill_(tokens >= 32000, 2)
     # Get the masks and postition ids.
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         tokens,

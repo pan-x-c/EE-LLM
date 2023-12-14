@@ -1533,18 +1533,19 @@ def forward_backward_pipelining_for_early_exit_tuning(
 
     # Run warmup forward passes.
     for i in range(num_microbatches):
-        input_tensor = recv_forward(recv_tensor_shapes, config)
-        output_tensor, early_exit_loss_func = early_exit_forward_step(
-            forward_step_func,
-            data_iterator,
-            model,
-            num_microbatches,
-            input_tensor,
-            forward_data_store,
-            config,
-            collect_non_loss_data,
-        )
-        send_forward(output_tensor, send_tensor_shapes, config)
+        with torch.no_grad():
+            input_tensor = recv_forward(recv_tensor_shapes, config)
+            output_tensor, early_exit_loss_func = early_exit_forward_step(
+                forward_step_func,
+                data_iterator,
+                model,
+                num_microbatches,
+                input_tensor,
+                forward_data_store,
+                config,
+                collect_non_loss_data,
+            )
+            send_forward(output_tensor, send_tensor_shapes, config)
 
         if has_early_exit and not forward_only:
             if i == num_microbatches - 1:
@@ -2139,14 +2140,13 @@ def early_exit_forward_backward_pipelining_with_bubble_filling(
 def cal_early_exit_loss(early_exit_loss_funcs, forward_data_store, num_microbatches, early_exit_loss_weight):
     exit_loss_dict = {}
     exit_losses = []
-    with torch.enable_grad():
-        for layer_num, exit_loss_func in early_exit_loss_funcs.items():
-            loss = exit_loss_func(log_dict=exit_loss_dict)
-            loss_weight = early_exit_loss_weight.get_weight(layer_num)
-            exit_losses.append(loss.multiply_(loss_weight))
-            exit_loss_dict[f'exit weight [{layer_num}]'] = early_exit_loss_weight.get_weight(layer_num)
-        forward_data_store.append(exit_loss_dict)
-        return torch.sum(torch.stack(exit_losses), dim=0).div(num_microbatches)
+    for layer_num, exit_loss_func in early_exit_loss_funcs.items():
+        loss = exit_loss_func(log_dict=exit_loss_dict)
+        loss_weight = early_exit_loss_weight.get_weight(layer_num)
+        exit_losses.append(loss.multiply_(loss_weight))
+        exit_loss_dict[f'exit weight [{layer_num}]'] = early_exit_loss_weight.get_weight(layer_num)
+    forward_data_store.append(exit_loss_dict)
+    return torch.sum(torch.stack(exit_losses), dim=0).div(num_microbatches)
 
 
 def early_exit_forward_step(
@@ -2242,19 +2242,18 @@ def early_exit_backward_step(input_tensor, output_tensor, output_tensor_grad, co
     # Backward pass.
     if output_tensor_grad[0] is None and config.grad_scale_func is not None:
         output_tensor[0] = config.grad_scale_func(output_tensor[0])
-    with torch.enable_grad():
-        if early_exit_loss is not None:
-            if output_tensor_grad[0] is not None:
-                fake_loss = early_exit_loss + torch.sum(output_tensor[0] * output_tensor_grad[0])
-            elif output_tensor[0].numel() == 1:
-                fake_loss = early_exit_loss + output_tensor[0]
-            else:
-                fake_loss = early_exit_loss
-            custom_backward(fake_loss, None)
-        elif config.deallocate_pipeline_outputs:
-            custom_backward(output_tensor[0], output_tensor_grad[0])
+    if early_exit_loss is not None:
+        if output_tensor_grad[0] is not None:
+            fake_loss = early_exit_loss + torch.sum(output_tensor[0] * output_tensor_grad[0])
+        elif output_tensor[0].numel() == 1:
+            fake_loss = early_exit_loss + output_tensor[0]
         else:
-            torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
+            fake_loss = early_exit_loss
+        custom_backward(fake_loss, None)
+    elif config.deallocate_pipeline_outputs:
+        custom_backward(output_tensor[0], output_tensor_grad[0])
+    else:
+        torch.autograd.backward(output_tensor[0], grad_tensors=output_tensor_grad[0])
 
     # Collect the grad of the input_tensor.
     input_tensor_grad = [None]
