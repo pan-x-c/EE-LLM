@@ -1,7 +1,8 @@
 # README
 
-EE-LLM is a framework for large-scale training and inference of early-exit (EE) large language models (LLMs), which is built upon [Megatron-LM](https://github.com/NVIDIA/Megatron-LM).
+[EE-LLM](https://arxiv.org/abs/2312.04916) is a framework for large-scale training and inference of early-exit (EE) large language models (LLMs), which is built upon [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) and currently under active development.
 
+![](images/ee_architecture.png)
 
 ## Installation
 
@@ -93,3 +94,19 @@ Below are some parameters for early-exit LLM inference, which can be found in `t
 - `early_exit_thres`: The confidence threshold used to determine whether to execute early exiting, ranging from 0.0 to 1.0.
 
 - `print_max_prob`: If set, the inference server will print the token with the highest confidence and the confidence values at all exits.
+
+
+## BibTeX
+
+```
+@misc{chen2023eellm,
+    title={EE-LLM: Large-Scale Training and Inference of Early-Exit Large Language Models with 3D Parallelism}, 
+    author={Yanxi Chen and Xuchen Pan and Yaliang Li and Bolin Ding and Jingren Zhou},
+    year={2023},
+    eprint={2312.04916},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG}
+}
+```
+
+
