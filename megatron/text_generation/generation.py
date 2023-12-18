@@ -103,6 +103,7 @@ def generate_tokens_probs_and_return_on_first_stage(
         early_exit_thres=1.0,
         use_early_exit=False,
         print_max_prob=False,
+        exit_layers=[]
         ):
     """Main token generation function.
     Arguments:
@@ -151,7 +152,8 @@ def generate_tokens_probs_and_return_on_first_stage(
                                        top_p_decay=top_p_decay,
                                        early_exit_thres=early_exit_thres,
                                        use_early_exit=use_early_exit,
-                                       print_max_prob=print_max_prob)
+                                       print_max_prob=print_max_prob,
+                                       exit_layers=exit_layers)
 
     # forward step.
     forward_step = ForwardStep(model, inference_params=inference_params)
@@ -452,7 +454,8 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
         echo_prompts=False,
         early_exit_thres=1.0,
         use_early_exit=False,
-        print_max_prob=False
+        print_max_prob=False,
+        exit_layers=[]
 ):
     """Main token generation function.
     Arguments:
@@ -501,7 +504,8 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
                                        top_p_decay=top_p_decay,
                                        early_exit_thres=early_exit_thres,
                                        use_early_exit=use_early_exit,
-                                       print_max_prob=print_max_prob)
+                                       print_max_prob=print_max_prob,
+                                       exit_layers=exit_layers)
 
     # forward step.
     forward_step = ForwardStep(model, inference_params=inference_params)

@@ -15,7 +15,8 @@ class InferenceParams:
                  top_k=0, top_p=0, temperature=1.0,
                  top_p_decay=0, top_p_bound=0,
                  early_exit_thres=None, use_early_exit=False,
-                 print_max_prob=False):
+                 print_max_prob=False,
+                 exit_layers=[]):
         self.max_sequence_length = max_sequence_length
         self.max_batch_size = max_batch_size
         self.sequence_len_offset = 0
@@ -31,6 +32,8 @@ class InferenceParams:
         self.top_p_decay = top_p_decay
         self.top_p_bound = top_p_bound
         self.print_max_probs = print_max_prob
+        self.exit_layers = set(exit_layers)
+        self.use_all_exit = len(exit_layers) == 0
 
         self.has_early_exited = False
         self.is_first_step = True
@@ -46,6 +49,8 @@ class InferenceParams:
 
     def do_early_exit(self, logits, layer_num):
         if self.has_early_exited or self.prev_has_early_exited:
+            return False
+        if not (self.use_all_exit or (layer_num in self.exit_layers)):
             return False
         last_token_logits = logits[:, -1, :]
         log_probs = F.log_softmax(last_token_logits, dim=1)

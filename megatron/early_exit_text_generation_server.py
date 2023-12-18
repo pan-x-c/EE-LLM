@@ -59,7 +59,8 @@ class MegatronGenerate(Resource):
             random_seed=req['random_seed'],
             early_exit_thres=req['early_exit_thres'],
             use_early_exit=req['use_early_exit'],
-            print_max_prob=req['print_max_prob'])
+            print_max_prob=req['print_max_prob'],
+            exit_layers=req['exit_layers'])
         end_time = time.time()
         print(f"Response(use {end_time - start_time}s): " + str(response))
         return {
@@ -129,6 +130,16 @@ class MegatronGenerate(Resource):
             raw_req['print_max_prob'] = True
         else:
             raw_req['print_max_prob'] = False
+
+        if "exit_layers" in raw_req:
+            if not type(raw_req['exit_layers']) == list:
+                return "exit_layers must be a list of int"
+            else:
+                for i in raw_req['exit_layers']:
+                    if not type(i) == int:
+                        return "exit_layers must be a list of int"
+        else:
+            raw_req['exit_layers'] = []
 
         top_k = 0.0
         if "top_k" in raw_req:
