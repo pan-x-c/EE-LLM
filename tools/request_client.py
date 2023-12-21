@@ -62,9 +62,9 @@ def main(
 if __name__ == "__main__":
     main(
         "tools/prompt_example.jsonl",
-        tokens_to_generate=100,
-        use_early_exit=False,
-        early_exit_thres=1.0,
+        tokens_to_generate=50,
+        use_early_exit=True,
+        early_exit_thres=0.9,
         print_max_prob=True,
         exit_layers=[]
     )

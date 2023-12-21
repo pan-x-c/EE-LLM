@@ -108,7 +108,7 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
             print("Can't add exit layers and change exit position at the same time")
             return
         use_pre_exit = checkpoint_args.pre_exit
-    target_exit_layer_nums = list(set(checkpoint_args.exit_layer_nums + args.add_exit_layer_nums))
+    target_exit_layer_nums = sorted(list(set(checkpoint_args.exit_layer_nums + args.add_exit_layer_nums)))
     tensor_parallel_size = checkpoint_args.tensor_model_parallel_size
     pipeline_parallel_size = checkpoint_args.pipeline_model_parallel_size
     use_pipeline_parallel = pipeline_parallel_size > 1
@@ -222,7 +222,7 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
                 if args.use_exit_norm:
                     checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.weight'] = final_norm_weight
                     if final_norm_bias is not None:
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm'] = final_norm_bias
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.bias'] = final_norm_bias
             if not use_pipeline_parallel:
                 checkpoint_save_path = os.path.join(checkpoint_save_dir, f'mp_rank_{tensor_rank:02d}', 'model_optim_rng.pt')
             else:

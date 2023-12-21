@@ -1267,7 +1267,7 @@ def _add_early_exit_args(parser):
     group.add_argument('--use-dynamic-exit-layer-weight', action='store_true')
     group.add_argument('--tune-exit', action='store_true',
                        help='Only finetune early exit parameters.')
-    group.add_argument('--tune-exit-pipeline-parallel-size', type=int, default=None)
+    group.add_argument('--tune-exit-pipeline-parallel-size', type=int, default=1)
     return parser
 
 
