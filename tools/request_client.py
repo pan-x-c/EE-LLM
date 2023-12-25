@@ -64,7 +64,7 @@ if __name__ == "__main__":
         "tools/prompt_example.jsonl",
         tokens_to_generate=50,
         use_early_exit=True,
-        early_exit_thres=0.9,
+        early_exit_thres=1.0,
         print_max_prob=True,
         exit_layers=[]
     )

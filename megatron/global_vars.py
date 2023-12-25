@@ -178,6 +178,12 @@ def _set_wandb_writer(args):
         is_master = args.rank == (args.world_size - 1)
         name = f'{args.wandb_exp_name}-master' if is_master \
                 else f'{args.wandb_exp_name}-worker-{pipeline_stage_id}'
+        if args.wandb_save_dir:
+            save_dir = args.wandb_save_dir
+        elif args.save:
+            save_dir = os.path.join(args.save, 'wandb')
+        else:
+            save_dir = os.path.join(os.getcwd(), 'wandb')
         wandb.init(
             project=args.wandb_project,
             group=args.wandb_group,
@@ -186,7 +192,8 @@ def _set_wandb_writer(args):
             config=args,
             force=False,
             notes=description,
-            tags=['master'if is_master else 'worker']
+            tags=['master'if is_master else 'worker'],
+            dir=save_dir
         )
         _GLOBAL_WANDB_WRITER = wandb
 
