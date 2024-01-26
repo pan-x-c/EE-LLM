@@ -1,28 +1,23 @@
 #!/bin/bash
 
-PROJECT_NAME=EE-LLM
-GROUP_NAME=7B-EXIT-8-16-untie-300B
+PROJECT_NAME=EE-TUNE
+GROUP_NAME=llama-2-13B-chat-8-EXIT-pt
 
-RUN_NAME=`date "+%m%d-%H%M"`
+CURRENT_TIME=`date "+%m%d-%H%M"`
+
+MASTER_NAME=${CURRENT_TIME}
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export OMP_NUM_THREADS=4
 
-# NCCL configuration
-# export NCCL_IB_HCA=
-# export NCCL_IB_TC=
-# export NCCL_IB_SL=
-# export NCCL_IB_GID_INDEX=
-# export NCCL_SOCKET_IFNAME=
-# export NCCL_DEBUG=WARN
-
 # Checkpoint configuration
-CHECKPOINT_HOME=
-CHECKPOINT_PATH=$CHECKPOINT_HOME/$PROJECT_NAME/$GROUP_NAME
+MODEL_HOME=
+LOAD_PATH=${MODEL_HOME}/checkpoints/llama2-13b-chat-8-exit # your checkpoint path
+CHECKPOINT_PATH=${MODEL_HOME}/checkpoints/$PROJECT_NAME/$GROUP_NAME
+TOKENIZER_PATH=${MODEL_HOME}/tokenizer/tokenizer.model
 
-# data configuration
+# Data configuration
 DATA_HOME=
-TOKENIZER_PATH=
 DATASET_ARXIV=${DATA_HOME}/redpajama-arxiv/all
 DATASET_BOOKS=${DATA_HOME}/redpajama-book/all
 DATASET_C4=${DATA_HOME}/redpajama-c4/all
@@ -57,19 +52,28 @@ DATA_PATH="\
     0.0050 ${DATASET_PILE_USPTO} \
 "
 
-DATA_ARGS="
-    --data-path $DATA_PATH \
-    --tokenizer-type SentencePieceTokenizer \
-    --tokenizer-model $TOKENIZER_PATH \
-    --split 990,9,1 \
-"
+NLAYERS=40
+HIDDEN=5120
+HEADS=40
+SEQ=2048
+FFN_SIZE=13824
 
-# Distributed configuration
-# MASTER_ADDR=127.0.0.1
-# MASTER_PORT=5900
-# RANK=0
-# WORLD_SIZE=2
+TP=1
+PP=4
+
+MICRO_BATCH=4
+GLOBAL_BATCH=16
+
+
+MASTER_ADDR=127.0.0.1
+MASTER_PORT=5901
+WORLD_SIZE=1
+RANK=0
 NPROC_PER_NODE=8
+
+TRAIN_ITER=40000
+EVAL_INTERVAL=50000
+SAVE_INTERVAL=20000
 
 DIST_ARGS="
     --master_addr $MASTER_ADDR \
@@ -79,45 +83,24 @@ DIST_ARGS="
     --node_rank $RANK \
     "
 
-# Parallisim configuration
-TP=2
-PP=4
-
-MICRO_BATCH=1
-GLOBAL_BATCH=2048
-
-# Train iteration
-LOG_INTERVAL=2
-SAVE_INTERVAL=$(( 240 * 10 )) # 10B data
-TRAIN_ITER=$(( $SAVE_INTERVAL * 80)) # 800B data
-EVAL_INTERVAL=$(( 240 * 5))
-
-# GPT configuration
-NLAYERS=40
-HIDDEN=5120
-HEADS=40
-SEQ=2048
-
 GPT_ARGS="
     --tensor-model-parallel-size $TP \
     --pipeline-model-parallel-size $PP \
+    --query-key-layer-scaling \
     --num-layers $NLAYERS \
     --hidden-size $HIDDEN \
     --num-attention-heads $HEADS \
     --seq-length $SEQ \
     --max-position-embeddings $SEQ \
-    --sequence-parallel \
     --micro-batch-size $MICRO_BATCH \
     --global-batch-size $GLOBAL_BATCH \
-    --lr 0.0003 \
+    --lr 0.0001 \
     --train-iters $TRAIN_ITER \
-    --lr-decay-style cosine \
-    --min-lr 3.0e-5 \
-    --weight-decay 1e-1 \
-    --lr-warmup-iters 2000 \
+    --min-lr 1.0e-5 \
+    --lr-warmup-fraction .01 \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
-    --init-method-std 0.01 \
+    --adam-eps 1e-5 \
     --clip-grad 1.0 \
     --bf16 \
     --disable-bias-linear \
@@ -125,33 +108,42 @@ GPT_ARGS="
     --normalization RMSNorm \
     --position-embedding-type rope \
     --swiglu \
+    --exit-layer-nums 5 10 15 20 25 30 35 40 \
     --untie-embeddings-and-output-weights \
+    --untie-exit-output-weights \
+    --padded-vocab-size 32000 \
+    --ffn-hidden-size $FFN_SIZE \
+    --finetune \
+    --tune-exit-pipeline-parallel-size 4 \
+    --tune-exit \
 "
 
-# Early-exit configuration
-EE_ARGS="
-    --untie-exit-output-weights \
-    --exit-layer-nums 11 21 \
-    --exit-layer-weight 0.1 0.2 \
-    --pre-exit \
+DATA_ARGS="
+    --data-path $DATA_PATH \
+    --tokenizer-type Llama2Tokenizer \
+    --tokenizer-model $TOKENIZER_PATH \
+    --split 990,9,1 \
 "
 
 OUTPUT_ARGS="
-    --log-interval 2 \
+    --log-interval 10 \
     --log-timers-to-tracker \
     --save-interval $SAVE_INTERVAL \
     --eval-interval $EVAL_INTERVAL \
-    --eval-iters 0 \
+    --eval-iters 1 \
     --wandb-project $PROJECT_NAME \
     --wandb-group $GROUP_NAME \
-    --wandb-exp-name $RUN_NAME \
+    --wandb-exp-name $MASTER_NAME \
 "
+
+CUR_DIR=$(cd $(dirname "$0") && pwd)
+MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../.." && pwd)
+cd $MEGATRON_ROOT_PATH
 
 torchrun $DIST_ARGS \
     pretrain_early_exit_gpt.py \
     $GPT_ARGS \
-    $EE_ARGS \
     $DATA_ARGS \
     $OUTPUT_ARGS \
-    --save $CHECKPOINT_PATH \
-    --load $CHECKPOINT_PATH
+    --load $LOAD_PATH \
+    --save $CHECKPOINT_PATH

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT_NAME=EE-LLM
-GROUP_NAME=1B-EXIT-6-12-untie-300B
+GROUP_NAME=7B-EXIT-8-16-untie-800B
 
 RUN_NAME=`date "+%m%d-%H%M"`
 
@@ -83,18 +83,18 @@ DIST_ARGS="
 TP=1
 PP=4
 
-MICRO_BATCH=4
+MICRO_BATCH=2
 GLOBAL_BATCH=2048
 
 # Train iteration
 LOG_INTERVAL=2
 SAVE_INTERVAL=$(( 240 * 10 )) # 10B data
-TRAIN_ITER=$(( $SAVE_INTERVAL * 30)) # 300B data
+TRAIN_ITER=$(( $SAVE_INTERVAL * 80)) # 800B data
 EVAL_INTERVAL=$(( 240 * 5))
 
 # GPT configuration
-NLAYERS=24
-HIDDEN=2048
+NLAYERS=32
+HIDDEN=4096
 HEADS=32
 SEQ=2048
 
@@ -125,12 +125,14 @@ GPT_ARGS="
     --normalization RMSNorm \
     --position-embedding-type rope \
     --swiglu \
+    --untie-embeddings-and-output-weights \
 "
 
 # Early-exit configuration
 EE_ARGS="
-    --exit-layer-nums 7 13 \
-    --exit-layer-weight 0.25 0.5 \
+    --untie-exit-output-weights \
+    --exit-layer-nums 9 17 \
+    --exit-layer-weight 0.1 0.2 \
     --pre-exit \
 "
 
@@ -144,6 +146,10 @@ OUTPUT_ARGS="
     --wandb-group $GROUP_NAME \
     --wandb-exp-name $RUN_NAME \
 "
+
+CUR_DIR=$(cd $(dirname "$0") && pwd)
+MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../.." && pwd)
+cd $MEGATRON_ROOT_PATH
 
 torchrun $DIST_ARGS \
     pretrain_early_exit_gpt.py \

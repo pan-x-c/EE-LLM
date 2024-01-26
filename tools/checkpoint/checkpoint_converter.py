@@ -11,7 +11,7 @@ def get_args():
     parser.add_argument('--load-dir', type=str)
     parser.add_argument('--load-iteration', type=int)
     parser.add_argument('--save-dir', type=str)
-    parser.add_argument('--conversion-type', choices=['exit-position', 'add-exit'])
+    parser.add_argument('--conversion-type', choices=['exit-position', 'add-exit'], default='add-exit')
     parser.add_argument('--target-exit-position', choices=['pre', 'post'], default='post')
     parser.add_argument('--add-exit-layer-nums', type=int, nargs='+', default=[])
     parser.add_argument('--use-exit-mlp', action='store_true')
@@ -19,8 +19,7 @@ def get_args():
     parser.add_argument('--use-exit-norm', action='store_true')
     parser.add_argument('--random-init', action='store_true')
     parser.add_argument('--init-method-std', type=float, default=0.02)
-    parser.add_argument('--megatron-path', type=str, default=None,
-                       help='Base directory of deepspeed repository')
+    parser.add_argument('--megatron-path', type=str, default=None)
     return parser.parse_args()
 
 def load_checkpoint_args(checkpoint_root_path):
