@@ -1,8 +1,22 @@
-# README
+# EE-LLM: Early-Exit Large Language Models
 
-[EE-LLM](https://arxiv.org/abs/2312.04916) is a framework for large-scale training, tunning and inference of early-exit (EE) large language models (LLMs), which is built upon [Megatron-LM](https://github.com/NVIDIA/Megatron-LM).
+
+[EE-LLM](https://arxiv.org/abs/2312.04916) is a framework for large-scale training and inference of early-exit (EE) large language models (LLMs), which is built upon [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) and compatible with 3D parallelism (namely data, tensor, sequence and pipeline parallelism).
 
 ![](images/ee_architecture.png)
+
+
+As shown in the above figure, an early-exit LLM can convert intermediate hidden states into outputs.
+During inference, the model can select adaptively one early/final exit to generate the output for each input, without running the full-model forward pass.
+
+Our system supports two methods of training early-exit LLMs:
+
+- Full-parameter training, which updates model parameters by optimizing a weighted sum of losses from multiple exits;
+- EE-Tuning, a parameter-efficient approach that augments an existing pre-trained LLM with early-exit layers and tunes them while modules of the original LLM are frozen.
+
+Further details about the usage and functionalities of EE-LLM are introduced in the following.
+
+
 
 ## Installation
 
@@ -12,12 +26,12 @@ We recommand using the 22.12 version of [NGC's PyTorch container](https://catalo
 For more details about the installation of Megatron-LM, please refer to Megatron-LM's [README](README_Megatron_LM.md).
 
 
-## Training
+## Full-parameter training
 
 Below are several example training scripts used in our paper.
 
 
-```
+```shell
 # train 1.3B model
 ./examples/ee_training/1-3B.sh
 
@@ -40,7 +54,7 @@ for more details about Megatron-LM's data preprocessing, please refer to [Data P
 > Running the training scripts requires 16 Nvidia A100-80G GPUs or higher hardware specifications. To run them with fewer GPUs, please set the parallelism degrees therein to smaller values.
 
 
-Below are the new configurations of EE-LLM compared to Megatron-LM. You can customize your own early-exit LLM by modifying these configurations.
+Below are some new configurations of EE-LLM compared to Megatron-LM. You can customize your own early-exit LLM by modifying these configurations.
 
 ### Configurations for model architectures
 
@@ -76,51 +90,71 @@ Below are the new configurations of EE-LLM compared to Megatron-LM. You can cust
 
 - `--backward-forward-ratio`: An estimate of the ratio of time consumption between backward and forward computation during training, used to automatically calculate the optimal number of inserted microbatches. Default to 2.0. [Experimental]
 
-## Tuning
 
-EE-LLM has supported to tune an existing standard LLM into a early-exit LLM, which is called "EE-Tuning".
+## EE-Tuning
 
-> Before using EE-Tunning, please make sure your existing LLM checkpoint is in Megatron-LM format.
-> As an example, `examples/ee_tuning/convert/convert_llama_hf.sh` provides the functionality to convert the llama2 huggingface checkpoint into Megatron-LM format.
 
-First, use `tools/checkpoint/checkpoint_converter.py` to add early-exit modules to the checkpoint, and the arguments of the script are listed below:
+> Before using EE-Tuning, please make sure that the existing LLM checkpoint is in Megatron-LM format.
+> As an example, `examples/ee_tuning/convert/convert_llama_hf.sh` provides the functionality of converting the Llama 2 HuggingFace checkpoint into Megatron-LM format.
 
-- `--load-dir`: The Megatron-LM format standard LLM checkpoint file path.
-- `--load-iteration`: The iteration number of checkpoints to be loaded.
-- `--save-dir`: The output early-exit LLM checkpoint file path.
-- `--add-exit-layer-nums`: The layer numbers of the layers where the early-exit module needs to be added.
-- `--use-exit-norm`: Add a norm to the early-exit module.
-- `--use-exit-mlp`: Add an MLP to the early-exit module.
-- `--use-exit-block`: Add an transformer layer to the early-exit module.
-- `--random-init`: Initialize the early-exit module randomly.
-- `--megatron-path`: Path to EE-LLM root directory.
 
-> `examples/ee_tuning/convert/add_exit_layers.sh` provides some conversion examples.
+### Stage 1: initialize early-exit layers
 
-Then, tune the converted checkpoint using similar method as shown [training process](#training). Below are some example scripts.
+The first step of EE-Tuning is to use `tools/checkpoint/checkpoint_converter.py` to add early-exit layers to the standard LLM checkpoint.
+Example scripts can be found in the following file:
 
 ```shell
-# tune llama2 13B chat with 8 exits
+examples/ee_tuning/convert/add_exit_layers.sh
+```
+
+The relevant arguments are listed below:
+
+- `--load-dir`: Path to the standard LLM checkpoint in Megatron-LM format.
+
+- `--load-iteration`: The iteration number of the checkpoint to be loaded.
+
+- `--save-dir`: Path to the output early-exit LLM checkpoint.
+
+- `--add-exit-layer-nums`: Indices of the backbone Transformer layers that early exits are added to.
+
+- `--use-exit-norm`: Add layer normalization (LayerNorm/RMSNorm) to the early-exit layer.
+
+- `--use-exit-mlp`: Add a MLP to the early-exit layer.
+
+- `--use-exit-block`: Add a Transformer layer to the early-exit layer.
+
+- `--random-init`: Initialize model parameters of early-exit layers randomly. Otherwise, they are initialized as duplication of certain modules of the original LLM.
+
+- `--megatron-path`: Path to EE-LLM root directory.
+
+
+### Stage 2: tune early-exit layers
+
+The second step of EE-Tuning is to tune the early-exit layers of the converted checkpoint, using scripts similar to those for [full-parameter training](#training). Below are some example scripts.
+
+```shell
+# tune Llama 2-Chat 13B with 8 exits
 ./examples/ee_tuning/tune/llama2_13B_8_exit_mlp_pt.sh
 
-# tune llama2 13B chat with 1 exit (only load the first 1/4 of the model)
+# tune Llama 2-Chat 13B with 1 exit (only load the first 1/4 of the model)
 ./examples/ee_tuning/tune/llama2_13B_1_exit_mlp_pt.sh
 ```
 
-Here are the new parameters added by EE-Tuning.
+Below are the new parameters relevant to EE-Tuning. Other parameters are the same as those for full-parameter training.
 
-- `--tune-exit`: Activate the functionality of EE-tunning.
-- `--tune-exit-pipeline-parallel-size`: Used to support partial loading functionality, only load pipeline stages whose stage number not larger than this value.
+- `--tune-exit`: Activate the functionality of EE-Tuning.
 
-Other parameters are the same as the training part.
+- `--tune-exit-pipeline-parallel-size`: Used to support partial checkpoint loading, only load pipeline stages whose stage numbers are not larger than this value.
+
+
 
 ## Inference
 
-We provided an text generation server for inference of early-exit LLMs.
+We provided a text generation server for inference of early-exit LLMs.
 To start a server, you can use the following script.
-Before running, please set `CHECKPOINT_PATH` to the root folder path of the checkpoint, and set `TP` and `PP` appropriately according to the parallelism of the checkpoint.
+Before running, please set `CHECKPOINT_PATH` to the root folder path of the checkpoint, and set `TP` and `PP` appropriately according to the parallelism degrees of the checkpoint.
 
-```
+```shell
 ./example/ee_inference/ee_inference_server.sh
 ```
 
