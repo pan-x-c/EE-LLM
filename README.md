@@ -39,10 +39,10 @@ Below are several example training scripts used in our paper.
 ./examples/ee_training/7B.sh
 
 # train 13B model 
-./example/ee_training/13B.sh
+./examples/ee_training/13B.sh
 
 # train 30B model
-./example/ee_training/30B.sh
+./examples/ee_training/30B.sh
 ```
 
 
@@ -165,8 +165,13 @@ Below are some parameters for early-exit LLM inference, which can be found in `t
 
 - `early_exit_thres`: The confidence threshold used to determine whether to execute early exiting, ranging from 0.0 to 1.0.
 
+- `exit_layers`: Only the early-exit layers listed here will be activated. If empty, all available early-exit layers will be activated.
+
 - `print_max_prob`: If set, the inference server will print the token with the highest confidence and the confidence values at all exits.
 
+## Checkpoints
+
+The model checkpoints mentioned in our paper will be released soon.
 
 ## BibTeX
 

@@ -5,7 +5,7 @@ SAVE_DIR= # path to save the converted megatron checkpoint
 TP=1  # target tensor parallel size
 PP=4  # target pipeline parallel size
 
-TOKENIZER_PATH= ${LOAD_DIR}/tokenizer.model
+TOKENIZER_PATH=${LOAD_DIR}/tokenizer.model
 
 CUR_DIR=$(cd $(dirname "$0") && pwd)
 MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../../.." && pwd)

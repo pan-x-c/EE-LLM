@@ -11,10 +11,9 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export OMP_NUM_THREADS=4
 
 # Checkpoint configuration
-MODEL_HOME=
-LOAD_PATH=${MODEL_HOME}/checkpoints/MET-EXP/llama2-13b-chat-1-exit # your checkpoint path
-CHECKPOINT_PATH=${MODEL_HOME}/checkpoints/$PROJECT_NAME/$GROUP_NAME
-TOKENIZER_PATH=${MODEL_HOME}/tokenizer/tokenizer.model
+LOAD_PATH= # your checkpoint path
+TOKENIZER_PATH= # your tokenizer path
+CHECKPOINT_PATH= # checkpoint save path
 
 # Data configuration
 DATA_HOME=
@@ -108,14 +107,16 @@ GPT_ARGS="
     --normalization RMSNorm \
     --position-embedding-type rope \
     --swiglu \
-    --exit-layer-nums 10 \
     --untie-embeddings-and-output-weights \
-    --untie-exit-output-weights \
     --padded-vocab-size 32000 \
     --ffn-hidden-size $FFN_SIZE \
     --finetune \
-    --tune-exit-pipeline-parallel-size 1 \
     --tune-exit \
+    --untie-exit-output-weights \
+    --use-exit-norm \
+    --use-exit-mlp \
+    --tune-exit-pipeline-parallel-size 4 \
+    --exit-layer-nums 10 \
 "
 
 DATA_ARGS="
@@ -137,7 +138,7 @@ OUTPUT_ARGS="
 "
 
 CUR_DIR=$(cd $(dirname "$0") && pwd)
-MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../.." && pwd)
+MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../../.." && pwd)
 cd $MEGATRON_ROOT_PATH
 
 torchrun $DIST_ARGS \

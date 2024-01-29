@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT_NAME=EE-LLM
-GROUP_NAME=7B-EXIT-8-16-untie-800B
+GROUP_NAME=30B-EXIT-15-30-untie-800B
 
 RUN_NAME=`date "+%m%d-%H%M"`
 
@@ -141,7 +141,7 @@ OUTPUT_ARGS="
     --log-timers-to-tracker \
     --save-interval $SAVE_INTERVAL \
     --eval-interval $EVAL_INTERVAL \
-    --eval-iters 0 \
+    --eval-iters 10 \
     --wandb-project $PROJECT_NAME \
     --wandb-group $GROUP_NAME \
     --wandb-exp-name $RUN_NAME \

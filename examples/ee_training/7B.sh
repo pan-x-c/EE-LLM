@@ -141,7 +141,7 @@ OUTPUT_ARGS="
     --log-timers-to-tracker \
     --save-interval $SAVE_INTERVAL \
     --eval-interval $EVAL_INTERVAL \
-    --eval-iters 0 \
+    --eval-iters 10 \
     --wandb-project $PROJECT_NAME \
     --wandb-group $GROUP_NAME \
     --wandb-exp-name $RUN_NAME \

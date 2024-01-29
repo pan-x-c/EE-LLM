@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT_NAME=EE-LLM
-GROUP_NAME=7B-EXIT-8-16-untie-800B
+GROUP_NAME=1B-EXIT-6-12-untie-300B
 
 RUN_NAME=`date "+%m%d-%H%M"`
 
@@ -80,22 +80,22 @@ DIST_ARGS="
     "
 
 # Parallisim configuration
-TP=2
+TP=1
 PP=4
 
-MICRO_BATCH=1
+MICRO_BATCH=4
 GLOBAL_BATCH=2048
 
 # Train iteration
 LOG_INTERVAL=2
 SAVE_INTERVAL=$(( 240 * 10 )) # 10B data
-TRAIN_ITER=$(( $SAVE_INTERVAL * 80)) # 800B data
+TRAIN_ITER=$(( $SAVE_INTERVAL * 30)) # 300B data
 EVAL_INTERVAL=$(( 240 * 5))
 
 # GPT configuration
-NLAYERS=40
-HIDDEN=5120
-HEADS=40
+NLAYERS=24
+HIDDEN=2048
+HEADS=32
 SEQ=2048
 
 GPT_ARGS="
@@ -125,14 +125,12 @@ GPT_ARGS="
     --normalization RMSNorm \
     --position-embedding-type rope \
     --swiglu \
-    --untie-embeddings-and-output-weights \
 "
 
 # Early-exit configuration
 EE_ARGS="
-    --untie-exit-output-weights \
-    --exit-layer-nums 11 21 \
-    --exit-layer-weight 0.1 0.2 \
+    --exit-layer-nums 7 13 \
+    --exit-layer-weight 0.25 0.5 \
     --pre-exit \
 "
 
@@ -141,7 +139,7 @@ OUTPUT_ARGS="
     --log-timers-to-tracker \
     --save-interval $SAVE_INTERVAL \
     --eval-interval $EVAL_INTERVAL \
-    --eval-iters 0 \
+    --eval-iters 10 \
     --wandb-project $PROJECT_NAME \
     --wandb-group $GROUP_NAME \
     --wandb-exp-name $RUN_NAME \
