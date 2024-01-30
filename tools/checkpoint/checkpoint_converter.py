@@ -3,6 +3,7 @@ import os
 import sys
 import torch
 import argparse
+import math
 from collections import OrderedDict
 
 def get_args():
@@ -10,14 +11,15 @@ def get_args():
     parser.add_argument('--load-dir', type=str)
     parser.add_argument('--load-iteration', type=int)
     parser.add_argument('--save-dir', type=str)
-    parser.add_argument('--conversion-type', choices=['exit-position', 'add-exit'])
+    parser.add_argument('--conversion-type', choices=['exit-position', 'add-exit'], default='add-exit')
     parser.add_argument('--target-exit-position', choices=['pre', 'post'], default='post')
     parser.add_argument('--add-exit-layer-nums', type=int, nargs='+', default=[])
     parser.add_argument('--use-exit-mlp', action='store_true')
     parser.add_argument('--use-exit-block', action='store_true')
     parser.add_argument('--use-exit-norm', action='store_true')
-    parser.add_argument('--megatron-path', type=str, default=None,
-                       help='Base directory of deepspeed repository')
+    parser.add_argument('--random-init', action='store_true')
+    parser.add_argument('--init-method-std', type=float, default=0.02)
+    parser.add_argument('--megatron-path', type=str, default=None)
     return parser.parse_args()
 
 def load_checkpoint_args(checkpoint_root_path):
@@ -31,6 +33,23 @@ def load_checkpoint_args(checkpoint_root_path):
     print(f"Loading args from {checkpoint_root_path}")
     model = torch.load(checkpoint_path)
     return model['args']
+
+# Init method from megatron-lm
+def init_method_normal(sigma):
+
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=sigma)
+
+    return init_
+
+def scaled_init_method_normal(sigma, num_layers):
+    std = sigma / math.sqrt(2.0 * num_layers)
+
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+
+    return init_
+
 
 def change_exit_position(args, checkpoint_load_dir, checkpoint_save_dir):
     checkpoint_args = load_checkpoint_args(checkpoint_load_dir)
@@ -108,11 +127,15 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
             print("Can't add exit layers and change exit position at the same time")
             return
         use_pre_exit = checkpoint_args.pre_exit
-    target_exit_layer_nums = list(set(checkpoint_args.exit_layer_nums + args.add_exit_layer_nums))
+    target_exit_layer_nums = sorted(list(set(checkpoint_args.exit_layer_nums + args.add_exit_layer_nums)))
     tensor_parallel_size = checkpoint_args.tensor_model_parallel_size
     pipeline_parallel_size = checkpoint_args.pipeline_model_parallel_size
     use_pipeline_parallel = pipeline_parallel_size > 1
     layer_per_stage = checkpoint_args.num_layers / pipeline_parallel_size
+    # if args.random_init:
+    #     init_method = init_method_normal(args.init_method_std)
+    #     output_layer_init_method = scaled_init_method_normal(args.init_method_std)
+        
     for tensor_rank in range(tensor_parallel_size):
         checkpoint_dicts = {}
         output_weight = None
@@ -146,15 +169,24 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
             if args.use_exit_mlp and (not hasattr(state_dict['args'], 'use_exit_mlp') or not state_dict['args'].use_exit_mlp):
                 state_dict['args'].use_exit_mlp = args.use_exit_mlp
                 for layer_num in exit_layer_nums:
+                    if args.random_init:
+                        init_method = init_method_normal(args.init_method_std)
+                        output_layer_init_method = scaled_init_method_normal(args.init_method_std, layer_num)
                     layer_id = int(layer_num - layer_num_offset)
                     state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.trunk.dense_h_to_4h.weight'] = \
                             state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.weight']
                     state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.trunk.dense_4h_to_h.weight'] = \
                             state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.weight']
-                    state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.weight'] = \
-                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.weight']
-                    state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.weight'] = \
-                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.weight']
+                    if args.random_init:
+                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.weight'] = \
+                                init_method(torch.empty(state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.weight'].shape))
+                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.weight'] = \
+                                output_layer_init_method(torch.empty(state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.weight'].shape))
+                    else:
+                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.weight'] = \
+                                state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.weight']
+                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.weight'] = \
+                                state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.weight']
                     state_dict['model']['language_model']['encoder'].pop(f'layers.{layer_id}.mlp.dense_h_to_4h.weight')
                     state_dict['model']['language_model']['encoder'].pop(f'layers.{layer_id}.mlp.dense_4h_to_h.weight')
                     if checkpoint_args.add_bias_linear:
@@ -162,10 +194,16 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
                                 state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.bias']
                         state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.trunk.dense_4h_to_h.bias'] = \
                                 state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.bias']
-                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.bias'] = \
-                                state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.bias']
-                        state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.bias'] = \
-                                state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.bias']
+                        if args.random_init:
+                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.bias'] = \
+                                    torch.zeros(state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.bias'].shape)
+                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.bias'] = \
+                                    torch.zeros(state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.bias'].shape)
+                        else:
+                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_h_to_4h.bias'] = \
+                                    state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_h_to_4h.bias']
+                            state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.branch.dense_4h_to_h.bias'] = \
+                                    state_dict['model']['language_model']['encoder'][f'layers.{layer_id}.mlp.dense_4h_to_h.bias']
                         state_dict['model']['language_model']['encoder'].pop(f'layers.{layer_id}.mlp.dense_h_to_4h.bias')
                         state_dict['model']['language_model']['encoder'].pop(f'layers.{layer_id}.mlp.dense_4h_to_h.bias')
             # convert to exit block
@@ -204,25 +242,51 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
             # add exit output weight and exit norm
             for i, layer_num in enumerate(exit_layer_nums):
                 layer_id = int(layer_num - layer_num_offset)
-                checkpoint_dicts[pipeline_rank]['model']['language_model']['exit_output_layer'][f'{i}.weight'] = output_weight
+                if args.random_init:
+                    init_method = init_method_normal(args.init_method_std)
+                    output_layer_init_method = scaled_init_method_normal(args.init_method_std, layer_num)
+                    checkpoint_dicts[pipeline_rank]['model']['language_model']['exit_output_layer'][f'{i}.weight'] = init_method(torch.empty(output_weight.shape))
+                else:
+                    checkpoint_dicts[pipeline_rank]['model']['language_model']['exit_output_layer'][f'{i}.weight'] = output_weight
                 if args.use_exit_block:
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.weight'] = last_layer_input_norm
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.query_key_value.weight'] = last_layer_atten_qkv
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.weight'] = last_layer_atten_dense
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.weight'] = last_layer_post_norm
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.weight'] = last_layer_mlp_h_to_4h
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.weight'] = last_layer_mlp_4h_to_h
-                    if checkpoint_args.add_bias_linear:
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.bias'] = last_layer_atten_dense_bias
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.bias'] = last_layer_h_to_4h_bias
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.bias'] = last_layer_4h_to_h_bias
-                    if checkpoint_args.normalization == 'LayerNorm':
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.bias'] = last_layer_input_norm_bias
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.bias'] = last_layer_post_norm_bias
+                    if args.random_init:
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.weight'] = torch.ones(last_layer_input_norm.shape)
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.query_key_value.weight'] = init_method(torch.empty(last_layer_atten_qkv.shape))
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.weight'] =output_layer_init_method(torch.empty(last_layer_atten_dense.shape))
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.weight'] = torch.ones(last_layer_post_norm.shape)
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.weight'] = init_method(torch.empty(last_layer_mlp_h_to_4h.shape))
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.weight'] = output_layer_init_method(torch.empty(last_layer_mlp_4h_to_h.shape))
+                        if checkpoint_args.add_bias_linear:
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.bias'] = torch.zeros(last_layer_atten_dense_bias.shape)
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.bias'] = torch.zeros(last_layer_h_to_4h_bias.shape)
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.bias'] = torch.zeros(last_layer_4h_to_h_bias.shape)
+                        if checkpoint_args.normalization == 'LayerNorm':
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.bias'] = torch.zeros(last_layer_input_norm_bias.shape)
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.bias'] = torch.zeros(last_layer_post_norm_bias.shape)
+                    else:
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.weight'] = last_layer_input_norm
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.query_key_value.weight'] = last_layer_atten_qkv
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.weight'] = last_layer_atten_dense
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.weight'] = last_layer_post_norm
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.weight'] = last_layer_mlp_h_to_4h
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.weight'] = last_layer_mlp_4h_to_h
+                        if checkpoint_args.add_bias_linear:
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.self_attention.dense.bias'] = last_layer_atten_dense_bias
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_h_to_4h.bias'] = last_layer_h_to_4h_bias
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.mlp.dense_4h_to_h.bias'] = last_layer_4h_to_h_bias
+                        if checkpoint_args.normalization == 'LayerNorm':
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.input_norm.bias'] = last_layer_input_norm_bias
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_block.post_attention_norm.bias'] = last_layer_post_norm_bias
                 if args.use_exit_norm:
-                    checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.weight'] = final_norm_weight
+                    if args.random_init:
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.weight'] = torch.ones(final_norm_weight.shape)
+                    else:
+                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.weight'] = final_norm_weight
                     if final_norm_bias is not None:
-                        checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm'] = final_norm_bias
+                        if args.random_init:
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.bias'] = torch.zeros(final_norm_bias.shape)
+                        else:
+                            checkpoint_dicts[pipeline_rank]['model']['language_model']['encoder'][f'layers.{layer_id}.exit_norm.bias'] = final_norm_bias
             if not use_pipeline_parallel:
                 checkpoint_save_path = os.path.join(checkpoint_save_dir, f'mp_rank_{tensor_rank:02d}', 'model_optim_rng.pt')
             else:
@@ -243,6 +307,8 @@ def convert(args):
         change_exit_position(args, checkpoint_load_dir, checkpoint_save_dir)
     elif args.conversion_type == 'add-exit':
         add_exit(args, checkpoint_load_dir, checkpoint_save_dir)
+    with open(os.path.join(args.save_dir, 'latest_checkpointed_iteration.txt'), 'w', encoding='utf-8') as f:
+        f.write(str(args.load_iteration))
 
 
 if __name__ == '__main__':

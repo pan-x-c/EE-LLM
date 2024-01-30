@@ -37,7 +37,8 @@ def generate_and_post_process(model,
                               return_logits=False,
                               early_exit_thres=1.0,
                               use_early_exit=False,
-                              print_max_prob=False):
+                              print_max_prob=False,
+                              exit_layers=[]):
     """Run inference and post-process outputs, i.e., detokenize,
     move to cpu and convert to list."""
 
@@ -62,7 +63,8 @@ def generate_and_post_process(model,
         random_seed=random_seed,
         early_exit_thres=early_exit_thres,
         use_early_exit=use_early_exit,
-        print_max_prob=print_max_prob)
+        print_max_prob=print_max_prob,
+        exit_layers=exit_layers)
 
     # Only post-process on first stage.
     if mpu.is_pipeline_first_stage():
@@ -104,7 +106,8 @@ def generate(model,
              random_seed=-1,
              early_exit_thres=1.0,
              use_early_exit=False,
-             print_max_prob=False):
+             print_max_prob=False,
+             exit_layers=[]):
     """Given prompts and input parameters, run inference and return:
        tokens: prompts plus the generated tokens.
        lengths: length of the prompt + generations. Note that we can
@@ -124,9 +127,16 @@ def generate(model,
     if stop_token_ids != None:
         stop_token_ids = torch.tensor(stop_token_ids, dtype=torch.int64)
         values.append(len(stop_token_ids))
-        values.extend(stop_token_ids)
     else:
         values.append(0)
+        stop_token_ids = []
+
+    if len(exit_layers) > 0:
+        exit_layers = torch.tensor(exit_layers, dtype=torch.int64)
+        values.append(len(exit_layers))
+    else:
+        values.append(0)
+
     values_float_tensor = broadcast_float_list(len(values), float_list=values)
     tokens_to_generate = int(values_float_tensor[0].item())
     return_output_log_probs = bool(values_float_tensor[1].item())
@@ -144,12 +154,18 @@ def generate(model,
     early_exit_thres = values_float_tensor[13].item()
     use_early_exit = bool(values_float_tensor[14].item())
     print_max_prob = bool(values_float_tensor[15].item())
-
     stop_tokens_length = int(values_float_tensor[16].item())
+    exit_layers_length = int(values_float_tensor[17].item())
+
     if stop_tokens_length > 0:
-        stop_token_ids = values_float_tensor[17: 17 + stop_tokens_length].int()
+        stop_token_ids = broadcast_float_list(stop_tokens_length, float_list=stop_token_ids)
     else:
         stop_token_ids = None
+
+    if exit_layers_length > 0:
+        exit_layers = broadcast_float_list(exit_layers_length, float_list=exit_layers).int().cpu().numpy().tolist()
+    else:
+        exit_layers = []
 
     if random_seed != -1:
         torch.random.manual_seed(random_seed)
@@ -184,7 +200,8 @@ def generate(model,
                 echo_prompts=echo_prompts,
                 early_exit_thres=early_exit_thres,
                 use_early_exit=use_early_exit,
-                print_max_prob=print_max_prob)
+                print_max_prob=print_max_prob,
+                exit_layers=exit_layers)
         else:
             output = generate_tokens_probs_and_return_on_first_stage(
                 model, context_tokens_tensor, context_length_tensor,
@@ -200,7 +217,8 @@ def generate(model,
                 echo_prompts=echo_prompts,
                 early_exit_thres=early_exit_thres,
                 use_early_exit=use_early_exit,
-                print_max_prob=print_max_prob)
+                print_max_prob=print_max_prob,
+                exit_layers=exit_layers)
     except Exception as e:
         traceback.print_exc()
     return output

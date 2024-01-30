@@ -217,6 +217,15 @@ def update_train_iters(args):
     print_rank_0('setting training iterations to {}'.format(args.train_iters))
 
 
+def is_early_exit_param(param_name):
+    # for exit_output_layer / exit_norm / exit_block
+    if 'exit' in param_name:
+        return True
+    # for branch mlp
+    if '.branch.' in param_name:
+        return True
+    return False
+
 def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap_with_ddp=True):
     """Build the model."""
     args = get_args()
@@ -241,7 +250,10 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             model.append(this_model)
     else:
         pre_process = mpu.is_pipeline_first_stage()
-        post_process = mpu.is_pipeline_last_stage()
+        if args.tune_exit:
+            post_process = mpu.is_real_pipeline_last_stage_in_tune_exit()
+        else:
+            post_process = mpu.is_pipeline_last_stage()
         add_encoder = True
         add_decoder = True
         if model_type == ModelType.encoder_and_decoder:
@@ -270,6 +282,13 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     if not isinstance(model, list):
         model = [model]
+
+    # tune early exit only
+    if args.tune_exit:
+        for model_module in model:
+            for name, param in model_module.named_parameters():
+                if not is_early_exit_param(name):
+                    param.requires_grad = False
 
     # Disallow training and inference with Transformer Engine
     # for non-GPT models
@@ -767,7 +786,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
-
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_backward_func,
                     train_data_iterator,

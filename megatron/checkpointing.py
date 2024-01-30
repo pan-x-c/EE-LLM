@@ -55,7 +55,6 @@ def check_checkpoint_args(checkpoint_args):
     _compare('num_layers')
     _compare('hidden_size')
     _compare('num_attention_heads')
-    _compare('add_position_embedding', default=True)
     if args.vocab_file:
         _compare('max_position_embeddings')
         _compare('make_vocab_size_divisible_by')
@@ -89,7 +88,7 @@ def get_checkpoint_name(checkpoints_path, iteration, release=False,
 
     # Use both the tensor and pipeline MP rank.
     if pipeline_parallel is None:
-        pipeline_parallel = (mpu.get_pipeline_model_parallel_world_size() > 1)
+        pipeline_parallel = mpu.has_pipeline_parallel()
     if tensor_rank is None:
         tensor_rank = mpu.get_tensor_model_parallel_rank()
     if pipeline_rank is None:

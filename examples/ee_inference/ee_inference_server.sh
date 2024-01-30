@@ -37,6 +37,10 @@ SERVER_ARGS="
   --port $PORT
 "
 
+CUR_DIR=$(cd $(dirname "$0") && pwd)
+MEGATRON_ROOT_PATH=$(cd "$CUR_DIR/../.." && pwd)
+cd $MEGATRON_ROOT_PATH
+
 torchrun $DIST_ARGS \
     tools/run_early_exit_text_generation_server.py \
     $SERVER_ARGS

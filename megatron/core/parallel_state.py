@@ -80,6 +80,10 @@ _EARLY_EXIT_LAYER_NUMS = None
 
 _EARLY_EXIT_STAGES = None
 
+_TUNE_EXIT = False
+
+_FULL_EXIT_PIPELINE_PARALLEL_SIZE = None
+
 _EMBEDDING_STAGES = None
 
 def initialize_model_parallel(
@@ -92,6 +96,8 @@ def initialize_model_parallel(
     expert_model_parallel_size: int = 1,
     num_layers: Optional[int] = None,
     early_exit_layer_nums: Optional[List[int]] = None,
+    tune_exit: Optional[bool] = False,
+    full_exit_pipeline_parallel_size: Optional[int] = None,
 ) -> None:
     """Initialize model data parallel groups.
 
@@ -342,7 +348,17 @@ def initialize_model_parallel(
     assert _EARLY_EXIT_LAYER_NUMS is None, 'early exit layer nums is already initialized'
     global _EARLY_EXIT_STAGES
     assert _EARLY_EXIT_STAGES is None, 'early exit stages is already initialized'
-    layer_per_stage = num_layers / pipeline_model_parallel_size
+    global _FULL_EXIT_PIPELINE_PARALLEL_SIZE
+    assert _FULL_EXIT_PIPELINE_PARALLEL_SIZE is None, 'full exit pipeline parallel size is already initialized'
+    global _TUNE_EXIT
+    _TUNE_EXIT = tune_exit
+    if tune_exit:
+        if full_exit_pipeline_parallel_size is None:
+            full_exit_pipeline_parallel_size = pipeline_model_parallel_size
+        layer_per_stage = num_layers // full_exit_pipeline_parallel_size
+        _FULL_EXIT_PIPELINE_PARALLEL_SIZE = full_exit_pipeline_parallel_size
+    else:
+        layer_per_stage = num_layers // pipeline_model_parallel_size
     _EARLY_EXIT_STAGES = list(set(map(lambda layer_num:  int((layer_num - 1) // layer_per_stage), early_exit_layer_nums)))
     for i in range(num_pipeline_model_parallel_groups):
         ranks = range(i, world_size, num_pipeline_model_parallel_groups)
@@ -921,6 +937,18 @@ def has_early_exit():
     """Return true if pipeline stage has early exit output"""
     return _EARLY_EXIT_LAYER_NUMS != None and len(_EARLY_EXIT_LAYER_NUMS) > 0
 
+def is_tune_exit():
+    return _TUNE_EXIT
+
+def has_pipeline_parallel():
+    if _TUNE_EXIT:
+        return _FULL_EXIT_PIPELINE_PARALLEL_SIZE > 1
+    else:
+        return get_pipeline_model_parallel_world_size() > 1
+
+def is_real_pipeline_last_stage_in_tune_exit():
+    return get_pipeline_model_parallel_rank() == (_FULL_EXIT_PIPELINE_PARALLEL_SIZE - 1)
+
 
 def get_early_exit_layer_nums():
     return _EARLY_EXIT_LAYER_NUMS
@@ -1021,3 +1049,7 @@ def destroy_model_parallel():
     _EARLY_EXIT_LAYER_NUMS = None
     global _EARLY_EXIT_STAGES
     _EARLY_EXIT_STAGES = None
+    global _FULL_EXIT_PIPELINE_PARALLEL_SIZE
+    _FULL_EXIT_PIPELINE_PARALLEL_SIZE = None
+    global _TUNE_EXIT
+    _TUNE_EXIT = False

@@ -722,28 +722,6 @@ class EarlyExitTransformerLanguageModel(TransformerLanguageModel):
 
         return encoder_output, early_exit_output
 
-
-    def state_dict_for_save_checkpoint(self, prefix='', keep_vars=False):
-        """For easy load."""
-
-        state_dict_ = {}
-        state_dict_[self._word_embeddings_key] \
-            = self.word_embeddings.state_dict(prefix=prefix,
-                                              keep_vars=keep_vars)
-        if self.untie_exit_output_weights:
-            state_dict_[self._exit_output_key] = self.exit_output_layer.state_dict(prefix=prefix, keep_vars=keep_vars)
-
-        if self.add_position_embedding:
-            state_dict_[self._position_embeddings_key] \
-                = self.position_embeddings.state_dict(prefix=prefix,
-                                                  keep_vars=keep_vars)
-        if self.num_tokentypes > 0:
-            state_dict_[self._tokentype_embeddings_key] \
-                = self.tokentype_embeddings.state_dict(prefix=prefix,
-                                                       keep_vars=keep_vars)
-
-        return state_dict_
-
     def state_dict_for_save_checkpoint(self, prefix='', keep_vars=False):
         """For easy load."""
 

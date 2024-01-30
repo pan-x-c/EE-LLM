@@ -224,6 +224,9 @@ def save_checkpoint(queue, args):
         layer_per_stage = md.num_layers / args.target_pipeline_parallel_size
         mpu.set_early_exit_layer_nums(list(filter(lambda x: 0 < x <= layer_per_stage, md.exit_layer_nums)))
         mpu.set_early_exit_stages(list(set(map(lambda layer_num:  int((layer_num - 1) // layer_per_stage), md.exit_layer_nums))))
+    else:
+        mpu.set_early_exit_layer_nums([])
+        mpu.set_early_exit_stages([])
     fused_kernels.load(margs)
 
     # Embeddings

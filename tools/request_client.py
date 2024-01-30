@@ -14,6 +14,7 @@ def request(
     use_early_exit=True,
     early_exit_thres=0.8,
     print_max_prob=False,
+    exit_layers=[]
 ):
     length = len(prompts)
     for i in range(length):
@@ -25,6 +26,7 @@ def request(
             "random_seed": int(time.time_ns()) % 16384,
             "echo_prompts": False,
             "early_exit_thres": early_exit_thres,
+            "exit_layers": exit_layers
         }
         if use_early_exit:
             data["use_early_exit"] = True
@@ -46,22 +48,23 @@ def request(
 
 
 def main(
-    file_name, tokens_to_generate, use_early_exit, early_exit_thres, print_max_prob
+    file_name, tokens_to_generate, use_early_exit, early_exit_thres, print_max_prob, exit_layers
 ):
     prompts = []
     with open(file_name, "r") as f:
         for line in f.readlines():
             prompts.append(json.loads(line)["text"])
     request(
-        prompts, tokens_to_generate, use_early_exit, early_exit_thres, print_max_prob
+        prompts, tokens_to_generate, use_early_exit, early_exit_thres, print_max_prob, exit_layers
     )
 
 
 if __name__ == "__main__":
     main(
         "tools/prompt_example.jsonl",
-        tokens_to_generate=100,
+        tokens_to_generate=50,
         use_early_exit=True,
-        early_exit_thres=0.8,
-        print_max_prob=False,
+        early_exit_thres=1.0,
+        print_max_prob=True,
+        exit_layers=[]
     )
