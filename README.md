@@ -155,7 +155,7 @@ To start a server, you can use the following script.
 Before running, please set `CHECKPOINT_PATH` to the root folder path of the checkpoint, and set `TP` and `PP` appropriately according to the parallelism degrees of the checkpoint.
 
 ```shell
-./example/ee_inference/ee_inference_server.sh
+./examples/ee_inference/ee_inference_server.sh
 ```
 
 After the server is started, you can use `tools/request_client.py` to send requests to the server.
@@ -171,7 +171,14 @@ Below are some parameters for early-exit LLM inference, which can be found in `t
 
 ## Checkpoints
 
-The model checkpoints mentioned in our paper will be released soon.
+The model checkpoints used in our [EE-LLM paper](https://arxiv.org/abs/2312.04916) have been released on ModelScope:
+
+- 1.3B model with two early exits at Layer 6 and 12. [[link]](https://modelscope.cn/models/Data-Juicer/EE-LLM-1B-dj-refine-300B)
+- 7B model with two early exits at Layer 8 and 16. [[link]](https://modelscope.cn/models/Data-Juicer/EE-LLM-7B-dj-refine-150B)
+
+> The provided checkpoints have a pipeline parallel size of 4 (PP=4) and a tensor parallel size of 1 (TP=1),
+> please set those values properly in corresponding scripts.
+> For other parallel degrees, you can use `./tools/convert_parallelism.sh` to convert the checkpoints.
 
 ## BibTeX
 
