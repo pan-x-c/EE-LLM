@@ -1,10 +1,8 @@
 # EE-LLM: Early-Exit Large Language Models
 
-
 [EE-LLM](https://arxiv.org/abs/2312.04916) is a framework for large-scale training and inference of early-exit (EE) large language models (LLMs), which is built upon [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) and compatible with 3D parallelism (namely data, tensor, sequence and pipeline parallelism).
 
 ![](images/ee_architecture.png)
-
 
 As shown in the above figure, an early-exit LLM can convert intermediate hidden states into outputs.
 During inference, the model can select adaptively one early/final exit to generate the output for each input, without running the full-model forward pass.
@@ -12,11 +10,9 @@ During inference, the model can select adaptively one early/final exit to genera
 Our system supports two methods of training early-exit LLMs:
 
 - Full-parameter training, which updates model parameters by optimizing a weighted sum of losses from multiple exits;
-- EE-Tuning, a parameter-efficient approach that augments an existing pre-trained LLM with early-exit layers and tunes them while modules of the original LLM are frozen.
+- [EE-Tuning](https://arxiv.org/abs/2402.00518), a parameter-efficient approach that augments an existing pre-trained LLM with early-exit layers and tunes them while modules of the original LLM are frozen.
 
 Further details about the usage and functionalities of EE-LLM are introduced in the following.
-
-
 
 ## Installation
 
@@ -25,11 +21,9 @@ We recommand using the 22.12 version of [NGC's PyTorch container](https://catalo
 
 For more details about the installation of Megatron-LM, please refer to Megatron-LM's [README](README_Megatron_LM.md).
 
-
 ## Full-parameter training
 
-Below are several example training scripts used in our paper.
-
+Below are several example training scripts used in our [EE-LLM paper](https://arxiv.org/abs/2312.04916).
 
 ```shell
 # train 1.3B model
@@ -45,14 +39,12 @@ Below are several example training scripts used in our paper.
 ./examples/ee_training/30B.sh
 ```
 
-
-The training data used in these scripts can be found in [Data-Juicer](https://github.com/alibaba/data-juicer/blob/main/configs/data_juicer_recipes/README.md). 
+The training data used in these scripts can be found in [Data-Juicer](https://github.com/alibaba/data-juicer/blob/main/configs/data_juicer_recipes/README.md).
 You can modify the `DATA_PATH` environment variable in the scripts to use your own dataset.
-Note that Megatron-LM can only recognize preprocessed binary data; 
+Note that Megatron-LM can only recognize preprocessed binary data;
 for more details about Megatron-LM's data preprocessing, please refer to [Data Preprocessing](README_Megatron_LM.md)
 
 > Running the training scripts requires 16 Nvidia A100-80G GPUs or higher hardware specifications. To run them with fewer GPUs, please set the parallelism degrees therein to smaller values.
-
 
 Below are some new configurations of EE-LLM compared to Megatron-LM. You can customize your own early-exit LLM by modifying these configurations.
 
@@ -90,13 +82,10 @@ Below are some new configurations of EE-LLM compared to Megatron-LM. You can cus
 
 - `--backward-forward-ratio`: An estimate of the ratio of time consumption between backward and forward computation during training, used to automatically calculate the optimal number of inserted microbatches. Default to 2.0. [Experimental]
 
-
 ## EE-Tuning
-
 
 > Before using EE-Tuning, please make sure that the existing LLM checkpoint is in Megatron-LM format.
 > As an example, `examples/ee_tuning/convert/convert_llama_hf.sh` provides the functionality of converting the Llama 2 HuggingFace checkpoint into Megatron-LM format.
-
 
 ### Stage 1: initialize early-exit layers
 
@@ -104,7 +93,7 @@ The first step of EE-Tuning is to use `tools/checkpoint/checkpoint_converter.py`
 Example scripts can be found in the following file:
 
 ```shell
-examples/ee_tuning/convert/add_exit_layers.sh
+./examples/ee_tuning/convert/add_exit_layers.sh
 ```
 
 The relevant arguments are listed below:
@@ -127,7 +116,6 @@ The relevant arguments are listed below:
 
 - `--megatron-path`: Path to EE-LLM root directory.
 
-
 ### Stage 2: tune early-exit layers
 
 The second step of EE-Tuning is to tune the early-exit layers of the converted checkpoint, using scripts similar to those for [full-parameter training](#training). Below are some example scripts.
@@ -145,8 +133,6 @@ Below are the new parameters relevant to EE-Tuning. Other parameters are the sam
 - `--tune-exit`: Activate the functionality of EE-Tuning.
 
 - `--tune-exit-pipeline-parallel-size`: Used to support partial checkpoint loading, only load pipeline stages whose stage numbers are not larger than this value.
-
-
 
 ## Inference
 
@@ -176,15 +162,16 @@ The model checkpoints used in our [EE-LLM paper](https://arxiv.org/abs/2312.0491
 - 1.3B model with two early exits at Layer 6 and 12. [[link]](https://modelscope.cn/models/Data-Juicer/EE-LLM-1B-dj-refine-300B)
 - 7B model with two early exits at Layer 8 and 16. [[link]](https://modelscope.cn/models/Data-Juicer/EE-LLM-7B-dj-refine-150B)
 
-> The provided checkpoints have a pipeline parallel size of 4 (PP=4) and a tensor parallel size of 1 (TP=1),
-> please set those values properly in corresponding scripts.
-> For other parallel degrees, you can use `./tools/convert_parallelism.sh` to convert the checkpoints.
+The provided checkpoints have a pipeline parallel size of 4 (PP=4) and a tensor parallel size of 1 (TP=1), please set those values properly in corresponding scripts.
+For other parallelism degrees, you can use `./tools/convert_parallelism.sh` to convert the checkpoints.
+
+> Note: the above checkpoints are pre-trained base model without any fine-tuning or alignment.
 
 ## BibTeX
 
-```
+```bibtex
 @misc{chen2023eellm,
-    title={EE-LLM: Large-Scale Training and Inference of Early-Exit Large Language Models with 3D Parallelism}, 
+    title={EE-LLM: Large-Scale Training and Inference of Early-Exit Large Language Models with 3D Parallelism},
     author={Yanxi Chen and Xuchen Pan and Yaliang Li and Bolin Ding and Jingren Zhou},
     year={2023},
     eprint={2312.04916},
@@ -193,4 +180,13 @@ The model checkpoints used in our [EE-LLM paper](https://arxiv.org/abs/2312.0491
 }
 ```
 
-
+```bibtex
+@misc{pan2024eetuning,
+      title={EE-Tuning: An Economical yet Scalable Solution for Tuning Early-Exit Large Language Models}, 
+      author={Xuchen Pan and Yanxi Chen and Yaliang Li and Bolin Ding and Jingren Zhou},
+      year={2024},
+      eprint={2402.00518},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+```
