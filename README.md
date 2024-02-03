@@ -17,7 +17,7 @@ Further details about the usage and functionalities of EE-LLM are introduced in 
 ## Installation
 
 The installation of EE-LLM is the same as Megatron-LM.
-We recommand using the 22.12 version of [NGC's PyTorch container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) (nvcr.io/nvidia/pytorch:22.12-py3), which is also the development environment of EE-LLM.
+We recommend using the 22.12 version of [NGC's PyTorch container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) (nvcr.io/nvidia/pytorch:22.12-py3), which is also the development environment of EE-LLM.
 
 For more details about the installation of Megatron-LM, please refer to Megatron-LM's [README](README_Megatron_LM.md).
 
