@@ -119,6 +119,12 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
         return
     checkpoint_args = load_checkpoint_args(checkpoint_load_dir)
     use_pre_exit = False
+
+    if not hasattr(checkpoint_args, "exit_layer_nums"):
+        checkpoint_args.exit_layer_nums = []
+    if not hasattr(checkpoint_args, "pre_exit"):
+        checkpoint_args.pre_exit = False
+    
     if len(checkpoint_args.exit_layer_nums) == 0:
         if args.target_exit_position == 'pre':
             use_pre_exit = True
@@ -132,10 +138,7 @@ def add_exit(args, checkpoint_load_dir, checkpoint_save_dir):
     pipeline_parallel_size = checkpoint_args.pipeline_model_parallel_size
     use_pipeline_parallel = pipeline_parallel_size > 1
     layer_per_stage = checkpoint_args.num_layers / pipeline_parallel_size
-    # if args.random_init:
-    #     init_method = init_method_normal(args.init_method_std)
-    #     output_layer_init_method = scaled_init_method_normal(args.init_method_std)
-        
+
     for tensor_rank in range(tensor_parallel_size):
         checkpoint_dicts = {}
         output_weight = None
